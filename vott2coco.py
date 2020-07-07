@@ -19,64 +19,22 @@ import json
 import itertools
 import random
 
-parser = argparse.ArgumentParser(description="Create coco formatted annotation file from VoTT's *.vott, *-asset.json files.")
-parser.add_argument('-f', '--vott_file', help="*.vott file path", required=True)
-parser.add_argument('-o', '--output_dir', help="output directory", required=True)
-parser.add_argument('-p', '--output_prefix', help="coco annotation files' prefix", required=True)
-parser.add_argument('-r', '--ratio', default=None, help="dataset size ratio Ex. 80:10:10 default=None")
-parser.add_argument('--overwrite', help='overwrite output files', action='store_true')
-
-args = parser.parse_args()
-
-vott_path = pathlib.Path(args.vott_file)
-annotation_dir = vott_path.parent
-output_dir = pathlib.Path(args.output_dir)
-output_prefix = args.output_prefix
-overwrite = args.overwrite
-
-if not vott_path.is_file():
-    sys.exit('vott file is not found')
-
-if not output_dir.is_dir():
-    sys.exit('--output_dir is not a directory')
-
-re_ratio = re.Regex(r'(?P<train>\d+):(?P<val>\d+):(?P<test>\d)')
-
-for suffix in ['train', 'val', 'test']:
-    output_path = output_dir.joinpath(output_prefix + suffix + '.json')
-    if output_path.exists() and not overwrite:
-        sys.exit('Output file {} exists. Add --overwrite flag to overwrite.'.format(output_path))
-
 SUPER_CATEGORY = 'objects'
-
-asset_files = set(annotation_dir.glob('*-asset.json'))
-num_assets = len(asset_files)
-num_val = int(num_assets * val_ratio)
-num_test = int(num_assets * test_ratio)
-test_samples = set(random.sample(asset_files, num_test))
-train_val = asset_files - test_samples
-val_samples = set(random.sample(train_val, num_val))
-train_samples = train_val - val_samples
-num_train = len(train_samples)
-
-dataset = {'train': train_samples, 'val': val_samples, 'test': test_samples}
-
-print('Num Samples: {} (train -> {}, validation -> {}, test -> {})'.format(num_assets, num_train, num_val, num_test))
 
 now = datetime.now()
 
 info = {
-    "description": "Dataset",
-    "url": "http://",
+    "description": None,
+    "url": None,
     "version": "1.0",
     "year": now.year,
-    "contributor": "",
+    "contributor": None,
     "date_created": now.strftime("%Y/%m/%d")
 }
 
 licenses = [
     {
-        "url": "",
+        "url": None,
         "id": 1,
         "name": "Unknown License"
     },
@@ -100,10 +58,6 @@ def polygon_area(p):
     n = len(p)
     area = abs(sum(p[i][0]*p[i-1][1] - p[i][1]*p[i-1][0] for i in range(n)))/2.0
     return area
-
-categories = get_categories(vott_path)
-
-cat2id = {cat['name']:cat['id'] for cat in categories}
 
 def create_coco(output_path, samples):
     image_id = 1
@@ -129,33 +83,20 @@ def create_coco(output_path, samples):
         regions = asset['regions']
 
         for region in regions:
+            annotation = {}
+            points = [(int(p['x']+0.5), int(p['y']+0.5)) for p in region['points']]
+            annotation['area'] = polygon_area(points)
+            annotation['iscrowd'] = 0
+            annotation['image_id'] = image_id
+            annotation['bbox'] = [int(region['boundingBox']['left'] + 0.5),
+                                  int(region['boundingBox']['top'] + 0.5),
+                                  int(region['boundingBox']['width'] + 0.5),
+                                  int(region['boundingBox']['height'] + 0.5)]
+            annotation['category_id'] =  cat2id[region['tags'][0]]
+            annotation['id'] = annotation_id
+            annotation_id += 1
             if region['type'] == 'POLYGON':
-                annotation = {}
-                points = [(int(p['x']+0.5), int(p['y']+0.5)) for p in region['points']]
                 annotation['segmentation'] = [list(itertools.chain.from_iterable(points))]
-                annotation['area'] = polygon_area(points)
-                annotation['iscrowd'] = 0
-                annotation['image_id'] = image_id
-                annotation['bbox'] = [region['boundingBox']['left'],
-                                    region['boundingBox']['top'],
-                                    region['boundingBox']['width'],
-                                    region['boundingBox']['height']]
-                annotation['category_id'] =  cat2id[region['tags'][0]]
-                annotation['id'] = annotation_id
-                annotation_id += 1
-            elif region['type'] == 'RECTANGLE':
-                annotation = {}
-                points = [(int(p['x']+0.5), int(p['y']+0.5)) for p in region['points']]
-                annotation['area'] = polygon_area(points)
-                annotation['iscrowd'] = 0
-                annotation['image_id'] = image_id
-                annotation['bbox'] = [region['boundingBox']['left'],
-                                    region['boundingBox']['top'],
-                                    region['boundingBox']['width'],
-                                    region['boundingBox']['height']]
-                annotation['category_id'] =  cat2id[region['tags'][0]]
-                annotation['id'] = annotation_id
-                annotation_id += 1
             else:
                 pass
             annotations.append(annotation)
@@ -172,8 +113,75 @@ def create_coco(output_path, samples):
     with open(output_path, 'w') as f:
         json.dump(coco_annotations, f)
 
-for subset, samples in dataset.items():
-    if samples:
-        output_path = output_dir.joinpath(output_prefix + subset + '.json')
 
-        create_coco(output_path, samples)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Create coco formatted annotation file from VoTT's *.vott, *-asset.json files.")
+    parser.add_argument('-f', '--vott_file', help="*.vott file path", required=True)
+    parser.add_argument('-o', '--output_dir', help="output directory", required=True)
+    parser.add_argument('-p', '--output_prefix', help="coco annotation files' prefix", required=True)
+    parser.add_argument('-r', '--ratio', default=None, help="dataset size ratio Ex. 80:10:10 default=None")
+    parser.add_argument('--overwrite', help='overwrite output files', action='store_true')
+
+    args = parser.parse_args()
+
+    vott_path = pathlib.Path(args.vott_file)
+    annotation_dir = vott_path.parent
+    output_dir = pathlib.Path(args.output_dir)
+    output_prefix = args.output_prefix
+    overwrite = args.overwrite
+
+    if not vott_path.is_file():
+        sys.exit('vott file is not found')
+
+    if not output_dir.is_dir():
+        sys.exit('--output_dir is not a directory')
+
+    asset_files = set(annotation_dir.glob('*-asset.json'))
+    categories = get_categories(vott_path)
+    cat2id = {cat['name']:cat['id'] for cat in categories}
+
+    if args.ratio:
+        re_ratio = re.compile(r'(?P<train>\d+):(?P<val>\d+)(?::(?P<test>\d+))*')
+
+        ratio_match = re_ratio.match(args.ratio)
+
+        if not ratio_match:
+            sys.exit('ratio must follow pattern like 99:99 or 99:99:99')
+
+        n_total = int(ratio_match['train']) + int(ratio_match['val']) + \
+            int(ratio_match['test'] if ratio_match['test'] else 0)
+        ratio = {}
+        ratio['train'] = float(ratio_match['train']) / n_total
+        ratio['val'] = float(ratio_match['val']) / n_total
+        ratio['test'] = float(ratio_match['test'] if ratio_match['test'] else 0) / n_total
+
+        for suffix in ['train', 'val', 'test']:
+            output_path = output_dir.joinpath(output_prefix + suffix + '.json')
+            if output_path.exists() and not overwrite:
+                sys.exit('Output file {} exists. Add --overwrite flag to overwrite.'.format(output_path))
+
+        num_assets = len(asset_files)
+        num_val = int(num_assets * ratio['val'])
+        num_test = int(num_assets * ratio['test'])
+        test_samples = set(random.sample(asset_files, num_test))
+        train_val = asset_files - test_samples
+        val_samples = set(random.sample(train_val, num_val))
+        train_samples = train_val - val_samples
+        num_train = len(train_samples)
+
+        dataset = {'train': train_samples, 'val': val_samples, 'test': test_samples}
+
+        print('Num Samples: {} (train -> {}, validation -> {}, test -> {})'.format(num_assets, num_train, num_val, num_test))
+
+        for subset, samples in dataset.items():
+            if samples:
+                output_path = output_dir.joinpath(output_prefix + subset + '.json')
+
+                create_coco(output_path, samples)
+
+    else:
+        output_path = output_dir.joinpath(output_prefix + '.json')
+        if output_path.exists() and not overwrite:
+            sys.exit('Output file {} exists. Add --overwrite flag to overwrite.'.format(output_path))
+
+        create_coco(output_path, asset_files)
