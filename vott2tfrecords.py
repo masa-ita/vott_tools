@@ -1,11 +1,17 @@
 import os
+import sys
 import pathlib
 import json
+import urllib
+import re
+import random
 import skimage.draw
 import tensorflow as tf
 import numpy as np
-tf.__version__
-tf.enable_eager_execution()
+import argparse
+
+if tf.__version__ < '2.0.0':
+    tf.enable_eager_execution()
 
 def get_categories(vott_file):
     with open(vott_file) as f:
@@ -15,7 +21,7 @@ def get_categories(vott_file):
 
     for idx, tag in enumerate(vott['tags']):
         category = {}
-        category['supercategory'] = SUPER_CATEGORY
+        category['supercategory'] = 'objects'
         category['id'] = idx + 1
         category['name'] = tag['name']
         categories.append(category)
@@ -40,10 +46,11 @@ def bytes_list_feature(value):
 def float_list_feature(value):
     return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
-def create_tf_example(image_path, asset_json_file, new_size=None):
-     with open(str(asset_json_file), 'r') as f:
+def create_tf_example(image_path, asset_json_file, class_id, new_size=None):
+    with open(str(asset_json_file), 'r') as f:
         example_dict = json.load(f)
-    filename = example_dict['asset']['name']
+    filename = urllib.parse.unquote(example_dict['asset']['name'])
+    print(filename)
     height = example_dict['asset']['size']['height']
     width = example_dict['asset']['size']['width']
     image_format = b'jpeg'
@@ -52,12 +59,12 @@ def create_tf_example(image_path, asset_json_file, new_size=None):
     if new_size:
         new_height = new_size[0]
         new_width = new_size[1]
-        tf_new_size = tf.constant([new_height, new_width])
+        tf_new_size = tf.constant([new_height, new_width], dtype=tf.int32)
         decoded_jpeg = tf.image.resize(decoded_jpeg, tf_new_size, method=tf.image.ResizeMethod.AREA)
     else:
         new_height = height
         new_width = width
-    encoded_jpeg = tf.io.encode_jpeg(tf.cast(decoded_image, tf.uint8))
+    encoded_jpeg = tf.io.encode_jpeg(tf.cast(decoded_jpeg, tf.uint8))
         
     xmins = [] # List of normalized left x coordinates in bounding box (1 per box)
     xmaxs = [] # List of normalized right x coordinates in bounding box
@@ -79,7 +86,7 @@ def create_tf_example(image_path, asset_json_file, new_size=None):
         ymins.append(region['boundingBox']['top'] / height)
         ymaxs.append((region['boundingBox']['top'] + region['boundingBox']['height']) / height)
         classes_text.append(text.encode('utf-8'))
-        classes.append(classes_id[text])
+        classes.append(class_id[text])
         if region['type'] == 'POLYGON':
             mask = np.zeros([new_height, new_width, 1], dtype=np.uint8)
             all_points_x = [int(point['x'] * new_width / width) for point in region['points']]
@@ -88,8 +95,8 @@ def create_tf_example(image_path, asset_json_file, new_size=None):
             mask[rr, cc, 0] = 255
             masks.append(tf.image.encode_png(mask).numpy())
     features = {
-        'image/height': int64_feature(NEW_HEIGHT),
-        'image/width': int64_feature(NEW_WIDTH),
+        'image/height': int64_feature(new_height),
+        'image/width': int64_feature(new_width),
         'image/filename': bytes_feature(filename.encode('utf-8')),
         'image/source_id': bytes_feature(filename.encode('utf-8')),
         'image/encoded': bytes_feature(encoded_jpeg.numpy()),
@@ -114,6 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output_dir', help="output directory", required=True)
     parser.add_argument('-p', '--output_prefix', help="tfrecord files' prefix", required=True)
     parser.add_argument('-r', '--ratio', default=None, help="dataset size ratio Ex. 80:10:10 default=None")
+    parser.add_argument('-n', '--new_size', default=None, nargs=2, metavar=('height', 'width'), help="new size (height, width)")
     parser.add_argument('--overwrite', help='overwrite output files', action='store_true')
 
     args = parser.parse_args()
@@ -123,7 +131,9 @@ if __name__ == '__main__':
     image_dir = pathlib.Path(args.image_dir)
     output_dir = pathlib.Path(args.output_dir)
     output_prefix = args.output_prefix
+    new_size = [int(n) for n in args.new_size]
     overwrite = args.overwrite
+    print(new_size)
 
     if not vott_path.is_file():
         sys.exit('vott file is not found')
@@ -154,7 +164,7 @@ if __name__ == '__main__':
         ratio['test'] = float(ratio_match['test'] if ratio_match['test'] else 0) / n_total
 
         for suffix in ['train', 'val', 'test']:
-            output_path = output_dir.joinpath(output_prefix + suffix + '.json')
+            output_path = output_dir.joinpath(output_prefix + suffix + '.tfrecord')
             if output_path.exists() and not overwrite:
                 sys.exit('Output file {} exists. Add --overwrite flag to overwrite.'.format(output_path))
 
@@ -174,23 +184,23 @@ if __name__ == '__main__':
         for subset, samples in dataset.items():
             if samples:
                 output_path = output_dir.joinpath(output_prefix + subset + '.tfrecord')
-                writer = tf.python_io.TFRecordWriter(output_path)
+                writer = tf.io.TFRecordWriter(str(output_path))
 
                 for sample in samples:
-                    tf_example = create_tf_example(image_dir, sample, new_size)
+                    tf_example = create_tf_example(image_dir, sample, cat2id, new_size)
                     writer.write(tf_example.SerializeToString())
 
                 writer.close()
 
     else:
-        output_path = output_dir.joinpath(output_prefix + '.json')
+        output_path = output_dir.joinpath(output_prefix + '.tfrecord')
         if output_path.exists() and not overwrite:
             sys.exit('Output file {} exists. Add --overwrite flag to overwrite.'.format(output_path))
 
-        writer = tf.python_io.TFRecordWriter(output_path)
+        writer = tf.io.TFRecordWriter(str(output_path))
 
         for sample in asset_files:
-            tf_example = create_tf_example(image_dir, sample, new_size)
+            tf_example = create_tf_example(image_dir, sample, cat2id, new_size)
             writer.write(tf_example.SerializeToString())
 
         writer.close()
