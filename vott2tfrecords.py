@@ -131,7 +131,7 @@ if __name__ == '__main__':
     image_dir = pathlib.Path(args.image_dir)
     output_dir = pathlib.Path(args.output_dir)
     output_prefix = args.output_prefix
-    new_size = [int(n) for n in args.new_size]
+    new_size = [int(n) for n in args.new_size] if args.new_size else None
     overwrite = args.overwrite
     print(new_size)
 
