@@ -82,9 +82,9 @@ def create_tf_example(image_path, asset_json_file, class_id, new_size=None):
     for region in regions:
         text = region['tags'][0]
         xmins.append(region['boundingBox']['left'] / width)
-        xmaxs.append((region['boundingBox']['left'] + region['boundingBox']['width']) / width)
+        xmaxs.append((region['boundingBox']['left'] + region['boundingBox']['width'] - 1) / width)
         ymins.append(region['boundingBox']['top'] / height)
-        ymaxs.append((region['boundingBox']['top'] + region['boundingBox']['height']) / height)
+        ymaxs.append((region['boundingBox']['top'] + region['boundingBox']['height'] - 1) / height)
         classes_text.append(text.encode('utf-8'))
         classes.append(class_id[text])
         if region['type'] == 'POLYGON':
