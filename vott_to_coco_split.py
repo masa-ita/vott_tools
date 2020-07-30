@@ -17,6 +17,7 @@ import datetime
 import json
 import itertools
 import random
+from urllib.parse import unquote
 
 parser = argparse.ArgumentParser(description="Create coco formatted annotation file from VoTT's *.vott, *-asset.json files.")
 parser.add_argument('-f', '--vott_file', help="*.vott file path", required=True)
@@ -121,7 +122,7 @@ for subset, samples in dataset.items():
 
             image = {}
             image['license'] = 1
-            image['file_name'] = asset['asset']['name']
+            image['file_name'] = unquote(asset['asset']['name'])
             image['coco_url'] = 'http://'
             image['height'] = asset['asset']['size']['height']
             image['width'] = asset['asset']['size']['width']
