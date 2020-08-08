@@ -34,8 +34,8 @@ annotation_dir = vott_path.parent
 output_dir = pathlib.Path(args.output_dir)
 output_prefix = args.output_prefix
 overwrite = args.overwrite
-val_ratio = args.val if args.val < 1.0 else args.val / 100.0
-test_ratio = args.test if args.test < 1.0 else args.test / 100.0
+val_ratio = float(args.val) if float(args.val) < 1.0 else float(args.val) / 100.0
+test_ratio = float(args.test) if float(args.test) < 1.0 else float(args.test) / 100.0
 
 if not vott_path.is_file():
     sys.exit('vott file is not found')
