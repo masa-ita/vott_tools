@@ -46,7 +46,7 @@ def bytes_list_feature(value):
 def float_list_feature(value):
     return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
-def create_tf_example(image_path, asset_json_file, class_id, new_size=None):
+def create_tf_example(image_path, asset_json_file, class_id, include_tags, new_size=None):
     with open(str(asset_json_file), 'r') as f:
         example_dict = json.load(f)
     filename = urllib.parse.unquote(example_dict['asset']['name'])
@@ -81,19 +81,20 @@ def create_tf_example(image_path, asset_json_file, class_id, new_size=None):
     
     for region in regions:
         text = region['tags'][0]
-        xmins.append(region['boundingBox']['left'] / width)
-        xmaxs.append((region['boundingBox']['left'] + region['boundingBox']['width'] - 1) / width)
-        ymins.append(region['boundingBox']['top'] / height)
-        ymaxs.append((region['boundingBox']['top'] + region['boundingBox']['height'] - 1) / height)
-        classes_text.append(text.encode('utf-8'))
-        classes.append(class_id[text])
-        if region['type'] == 'POLYGON':
-            mask = np.zeros([new_height, new_width, 1], dtype=np.uint8)
-            all_points_x = [int(point['x'] * new_width / width) for point in region['points']]
-            all_points_y = [int(point['y'] * new_height / height) for point in region['points']]
-            rr, cc = skimage.draw.polygon(all_points_y, all_points_x)
-            mask[rr, cc, 0] = 255
-            masks.append(tf.image.encode_png(mask).numpy())
+        if text in include_tags:
+            xmins.append(region['boundingBox']['left'] / width)
+            xmaxs.append((region['boundingBox']['left'] + region['boundingBox']['width'] - 1) / width)
+            ymins.append(region['boundingBox']['top'] / height)
+            ymaxs.append((region['boundingBox']['top'] + region['boundingBox']['height'] - 1) / height)
+            classes_text.append(text.encode('utf-8'))
+            classes.append(class_id[text])
+            if region['type'] == 'POLYGON':
+                mask = np.zeros([new_height, new_width, 1], dtype=np.uint8)
+                all_points_x = [int(point['x'] * new_width / width) for point in region['points']]
+                all_points_y = [int(point['y'] * new_height / height) for point in region['points']]
+                rr, cc = skimage.draw.polygon(all_points_y, all_points_x)
+                mask[rr, cc, 0] = 255
+                masks.append(tf.image.encode_png(mask).numpy())
     features = {
         'image/height': int64_feature(new_height),
         'image/width': int64_feature(new_width),
@@ -122,6 +123,8 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--output_prefix', help="tfrecord files' prefix", required=True)
     parser.add_argument('-r', '--ratio', default=None, help="dataset size ratio Ex. 80:10:10 default=None")
     parser.add_argument('-n', '--new_size', default=None, nargs=2, metavar=('height', 'width'), help="new size (height, width)")
+    parser.add_argument('-e', '--exclude_tags', default=None, help="exclude tags")
+    parser.add_argument('-s', '--select_tags', default=None,  help="select tags")
     parser.add_argument('--overwrite', help='overwrite output files', action='store_true')
 
     args = parser.parse_args()
@@ -132,8 +135,19 @@ if __name__ == '__main__':
     output_dir = pathlib.Path(args.output_dir)
     output_prefix = args.output_prefix
     new_size = [int(n) for n in args.new_size] if args.new_size else None
+    if args.exclude_tags:
+        exclude_tags = set([tag.strip for tag in args.exclude_tags.split(',')])
+        print("exclude:{}".format(exclude_tags))
+    else:
+        exclude_tags = set()
+
+    if args.select_tags:
+        select_tags = set([tag.strip for tag in args.select_tags.split(',')])
+        print("exclude:{}".format(select_tags))
+    else:
+        select_tags = set()
+
     overwrite = args.overwrite
-    print(new_size)
 
     if not vott_path.is_file():
         sys.exit('vott file is not found')
@@ -147,6 +161,13 @@ if __name__ == '__main__':
     asset_files = set(annotation_dir.glob('*-asset.json'))
     categories = get_categories(vott_path)
     cat2id = {cat['name']:cat['id'] for cat in categories}
+
+    if select_tags:
+        include_tags = select_tags
+    else:
+        include_tags = set([cat['name'] for cat in categories])
+    include_tags = include_tags - exclude_tags 
+    print("output tags {} only".format(include_tags))
 
     if args.ratio:
         re_ratio = re.compile(r'(?P<train>\d+):(?P<val>\d+)(?::(?P<test>\d+))*')
@@ -187,7 +208,7 @@ if __name__ == '__main__':
                 writer = tf.io.TFRecordWriter(str(output_path))
 
                 for sample in samples:
-                    tf_example = create_tf_example(image_dir, sample, cat2id, new_size)
+                    tf_example = create_tf_example(image_dir, sample, cat2id, include_tags, new_size)
                     writer.write(tf_example.SerializeToString())
 
                 writer.close()
@@ -200,7 +221,7 @@ if __name__ == '__main__':
         writer = tf.io.TFRecordWriter(str(output_path))
 
         for sample in asset_files:
-            tf_example = create_tf_example(image_dir, sample, cat2id, new_size)
+            tf_example = create_tf_example(image_dir, sample, cat2id, include_tags, new_size)
             writer.write(tf_example.SerializeToString())
 
         writer.close()
