@@ -135,15 +135,14 @@ if __name__ == '__main__':
     output_dir = pathlib.Path(args.output_dir)
     output_prefix = args.output_prefix
     new_size = [int(n) for n in args.new_size] if args.new_size else None
+    
     if args.exclude_tags:
-        exclude_tags = set([tag.strip for tag in args.exclude_tags.split(',')])
-        print("exclude:{}".format(exclude_tags))
+        exclude_tags = set([tag.strip() for tag in args.exclude_tags.split(',')])
     else:
         exclude_tags = set()
 
     if args.select_tags:
-        select_tags = set([tag.strip for tag in args.select_tags.split(',')])
-        print("exclude:{}".format(select_tags))
+        select_tags = set([tag.strip() for tag in args.select_tags.split(',')])
     else:
         select_tags = set()
 
