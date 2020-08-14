@@ -114,6 +114,12 @@ def create_tf_example(image_path, asset_json_file, class_id, include_tags, new_s
     tf_example = tf.train.Example(features=tf.train.Features(feature=features))
     return tf_example
    
+def get_tags_set(param):
+    if param:
+        tags = set([tag.strip() for tag in param.split(',')])
+    else:
+        tags = set()
+    return tags
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Create tfrecord datasets from VoTT's *.vott, *-asset.json files.")
@@ -136,15 +142,8 @@ if __name__ == '__main__':
     output_prefix = args.output_prefix
     new_size = [int(n) for n in args.new_size] if args.new_size else None
     
-    if args.exclude_tags:
-        exclude_tags = set([tag.strip() for tag in args.exclude_tags.split(',')])
-    else:
-        exclude_tags = set()
-
-    if args.select_tags:
-        select_tags = set([tag.strip() for tag in args.select_tags.split(',')])
-    else:
-        select_tags = set()
+    exclude_tags = get_tags_set(args.exclude_tags)
+    select_tags = get_tags_set(args.select_tags)
 
     overwrite = args.overwrite
 
