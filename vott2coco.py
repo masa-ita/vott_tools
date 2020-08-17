@@ -18,6 +18,7 @@ from datetime import datetime
 import json
 import itertools
 import random
+from urllib.parse import unquote
 
 SUPER_CATEGORY = 'objects'
 
@@ -71,7 +72,7 @@ def create_coco(output_path, samples):
 
         image = {}
         image['license'] = 1
-        image['file_name'] = asset['asset']['name']
+        image['file_name'] = unquote(asset['asset']['name'])
         image['coco_url'] = None
         image['height'] = asset['asset']['size']['height']
         image['width'] = asset['asset']['size']['width']
