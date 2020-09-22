@@ -135,7 +135,7 @@ def create_coco(vott_json, asset_ids, output_path):
 
         image = {}
         image['license'] = 1
-        image['file_name'] = asset['name']
+        image['file_name'] = urllib.parse.unquote(asset['name'])
         image['coco_url'] = None
         image['height'] = asset['size']['height']
         image['width'] = asset['size']['width']
