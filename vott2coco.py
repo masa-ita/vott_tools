@@ -11,14 +11,16 @@
 # limitations under the License.
 
 import argparse
-import pathlib
+import os
+import glob
 import sys
 import re
 from datetime import datetime
 import json
 import itertools
 import random
-import urllib
+import urllib.parse
+import shutil
 
 
 def load_json(path):
@@ -26,11 +28,10 @@ def load_json(path):
         vott_json = json.load(f)
 
     if vott_json['sourceConnection']:
-        vott_path = pathlib.Path(path)
-        annotation_dir = vott_path.parent
+        annotation_dir = os.path.abspath(os.path.join(path, os.pardir))
         asset_ids = vott_json['assets'].keys()
         for asset_id in asset_ids:
-            asset_path = annotation_dir/"{}-asset.json".format(asset_id)
+            asset_path = os.path.join(annotation_dir, "{}-asset.json".format(asset_id))
             with open(asset_path, 'r') as f:
                 asset = json.load(f)
             vott_json['assets'][asset_id]['regions'] = asset['regions']
@@ -79,12 +80,12 @@ def split_assets(asset_ids, ratio):
     return dataset
 
 def load_imagesets(imagesets_dir):
-    imageset_files = pathlib.Path(imagesets_dir).glob('*.txt')
+    imageset_files = glob.glob(os.path.join(imagesets_dir, '*.txt'))
     imagesets = {}
     for imageset_file in imageset_files:
         with open(imageset_file, 'r') as f:
             image_files = [line.strip() for line in f.readlines()]
-        imagesets[imageset_file.stem] = image_files
+        imagesets[os.path.splitext(os.path.basename(imageset_file))[0]] = image_files
     return imagesets
 
 def imagesets2datasets(file2id, imagesets):
@@ -177,30 +178,40 @@ def create_coco(vott_json, asset_ids, output_path):
     with open(output_path, 'w') as f:
         json.dump(coco_annotations, f)
 
+def copy_files(image_dir, output_dir, datasets):
+    for subset, file_list in datasets.items():
+        dst_dir = os.path.join(output_dir, subset)
+        os.makedirs(dst_dir)
+        for file_name in file_list:
+            shutil.copy(os.path.join(image_dir, file_name), dst_dir)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Create coco formatted annotation file from VoTT's *.vott, *-asset.json files.")
     parser.add_argument('-f', '--vott_file', help="*.vott file path", required=True)
     parser.add_argument('-o', '--output_dir', help="output directory", required=True)
-    parser.add_argument('-p', '--output_prefix', help="coco annotation files' prefix", required=True)
     parser.add_argument('-r', '--ratio', default=None, help="dataset size ratio Ex. 80:10:10 default=None")
-    parser.add_argument('-i', '--imagesets_dir', default=None, help="imagesets dir")
+    parser.add_argument('-i', '--imagesets_dir', default=None, help="imagesets directory")
+    parser.add_argument('-d', '--image_dir', default=None, help="image directory")
     parser.add_argument('--overwrite', help='overwrite output files', action='store_true')
 
     args = parser.parse_args()
 
-    vott_path = pathlib.Path(args.vott_file)
-    annotation_dir = vott_path.parent
-    output_dir = pathlib.Path(args.output_dir)
-    output_prefix = args.output_prefix
+    vott_path = args.vott_file
+    output_dir = args.output_dir
     imagesets_dir = args.imagesets_dir
+    image_dir = args.image_dir
     overwrite = args.overwrite
 
-    if not vott_path.is_file():
+    annotation_prefix = 'instances_'
+
+    if not os.path.isfile(vott_path):
         sys.exit('vott file is not found')
 
-    if not output_dir.is_dir():
+    if not os.path.isdir(output_dir):
         sys.exit('--output_dir is not a directory')
+
+    if not args.ratio and not args.imagesets_dir:
+        sys.exit('--ratio or --imagesets_dir must be set')
 
     if args.ratio and args.imagesets_dir:
         sys.exit('--ratio and --imagesets_dir can not set simultaniously')
@@ -219,16 +230,21 @@ if __name__ == '__main__':
         file2id = {urllib.parse.unquote(asset['name']):id  for id, asset in vott['assets'].items()}
         datasets = imagesets2datasets(file2id, imagesets)
     else:
-        datasets = {'': asset_ids}
+        sys.exit("--ratio or --imagesets_dir must be set")
 
     print_dataset_size(datasets)
 
+    annotation_dir = os.path.join(output_dir, 'annotations')
+    os.makedirs(annotation_dir)
+    
     for subset in datasets.keys():
-        output_path = output_dir.joinpath(output_prefix + subset + '.json')
-        if output_path.exists() and not overwrite:
+        output_path = os.path.join(annotation_dir, annotation_prefix + subset + '.json')
+        if os.path.exists(output_path) and not overwrite:
             sys.exit('Output file {} exists. Add --overwrite flag to overwrite.'.format(output_path))
 
     for subset, asset_ids in datasets.items():
         if asset_ids:
-            output_path = output_dir.joinpath(output_prefix + subset + '.json')
+            output_path = os.path.join(annotation_dir, annotation_prefix + subset + '.json')
             create_coco(vott, asset_ids, output_path)
+
+    copy_files(image_dir, output_dir, imagesets)
