@@ -181,7 +181,7 @@ def create_coco(vott_json, asset_ids, output_path):
 def copy_files(image_dir, output_dir, datasets):
     for subset, file_list in datasets.items():
         dst_dir = os.path.join(output_dir, subset)
-        os.makedirs(dst_dir)
+        os.makedirs(dst_dir, exist_ok=True)
         for file_name in file_list:
             shutil.copy(os.path.join(image_dir, file_name), dst_dir)
 
@@ -235,7 +235,7 @@ if __name__ == '__main__':
     print_dataset_size(datasets)
 
     annotation_dir = os.path.join(output_dir, 'annotations')
-    os.makedirs(annotation_dir)
+    os.makedirs(annotation_dir, exist_ok=True)
     
     for subset in datasets.keys():
         output_path = os.path.join(annotation_dir, annotation_prefix + subset + '.json')
@@ -247,4 +247,5 @@ if __name__ == '__main__':
             output_path = os.path.join(annotation_dir, annotation_prefix + subset + '.json')
             create_coco(vott, asset_ids, output_path)
 
-    copy_files(image_dir, output_dir, imagesets)
+    if image_dir:
+        copy_files(image_dir, output_dir, imagesets)
